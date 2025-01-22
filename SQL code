@@ -1,0 +1,102 @@
+-- Đếm dòng dữ liệu
+SELECT count(*) 
+FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+LIMIT 5
+-- 1273
+
+-- In thử vài dòng
+SELECT * 
+FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+LIMIT 10
+
+-- Tính lại mẫu khi lấy Price_euros < 2200
+SELECT count(*)
+FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+WHERE Price_euros is not null
+AND Price_euros < 2200;
+-- 1169
+
+-- Tính mean và std của mẫu mới
+SELECT 
+  AVG(Price_euros) AS mean,
+  STDDEV(Price_euros) AS std
+FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+WHERE Price_euros is not null
+AND Price_euros < 2200;
+-- mean: 992.3686398631
+-- std: 496.0494336321
+-- Lúc này trung bình của mẫu mới đã xấp xỉ mới trung vị của mẫu gốc (989) -> kích thước mẫu dữ liệu đã hợp lý để build model
+
+-------------------- TH1: LINEAR REGRESSION MODEL ---------------------
+-- CREATE MODEL
+CREATE OR REPLACE MODEL DA04_K300.laptop_price_linear_model
+OPTIONS(
+  model_type = 'linear_reg',
+  input_label_cols = ['Price_euros']
+)
+AS 
+SELECT *
+EXCEPT (os)
+FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+WHERE Price_euros is not null
+AND Price_euros < 2200;
+
+-- EVALUATION
+SELECT *
+FROM ML.EVALUATE(MODEL DA04_K300.laptop_price_linear_model)
+-- Mean absolute error: 179.057
+-- R squared: 0.7422
+
+-------------------- TH2: BOOSTED TREE MODEL ---------------------
+-- CREATE MODEL
+CREATE OR REPLACE MODEL DA04_K300.laptop_price_boostedtree_model
+OPTIONS(
+  model_type = 'BOOSTED_TREE_REGRESSOR',
+  input_label_cols = ['Price_euros'],
+  NUM_PARALLEL_TREE = 2
+)
+AS 
+SELECT *
+EXCEPT (os)
+FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+WHERE Price_euros is not null
+AND Price_euros < 2200;
+
+-- EVALUATION
+SELECT *
+FROM ML.EVALUATE(MODEL DA04_K300.laptop_price_boostedtree_model)
+-- Mean absolute error: 153.09556261923143
+-- R squared: 0.80972047197182628
+
+-------------------- TH3: RANDOM FOREST MODEL ---------------------
+-- CREATE MODEL
+CREATE OR REPLACE MODEL DA04_K300.laptop_price_randomforest_model
+OPTIONS(
+  model_type = 'RANDOM_FOREST_REGRESSOR',
+  input_label_cols = ['Price_euros'],
+  NUM_PARALLEL_TREE = 2
+)
+AS 
+SELECT *
+EXCEPT (os)
+FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+WHERE Price_euros is not null
+AND Price_euros < 2200;
+
+-- EVALUATION
+SELECT *
+FROM ML.EVALUATE(MODEL DA04_K300.laptop_price_randomforest_model)
+-- Mean absolute error: 191.556496105105
+-- R squared: 0.69183780181526378
+
+-- Chọn mô hình Boosted Tree vì có MAE thấp nhất và R2 gần về 1 nhất trong 3 mô hình
+--PREDICT
+SELECT *
+FROM
+  ML.PREDICT(MODEL DA04_K300.laptop_price_boostedtree_model,
+  (SELECT *
+  EXCEPT (os, Price_euros)
+  FROM `possible-byway-421016.DA04_K300.EDA_laptop_price_clean`
+  WHERE Price_euros is not null
+  AND Price_euros < 2200)
+  );
